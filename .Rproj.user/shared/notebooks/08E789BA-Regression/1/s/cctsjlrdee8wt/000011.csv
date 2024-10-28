@@ -1,0 +1,2 @@
+"0","survey_data <- survey_data %>%"
+"0","  mutate(log_earning = log(SALARY))"

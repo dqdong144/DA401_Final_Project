@@ -1,0 +1,5 @@
+"0","data_men <- survey_data[survey_data$GENDER == 'M',]"
+"0","data_women <- survey_data[survey_data$GENDER == 'F',] "
+"0","model_men <- lm(log_earning ~ Job_Match_Status * Field_of_Study + Highest_Degree + Race_Ethnicity + Job_Match_Status + AGE + tenure   + I(AGE^2) + I(tenure ^2) + Carnegie_Group, data = data_men)"
+"0",""
+"0","model_women <- lm(log_earning ~ Job_Match_Status * Field_of_Study + Highest_Degree + Race_Ethnicity + Job_Match_Status + AGE + tenure  + I(AGE^2) + I(tenure^2) + Carnegie_Group, data = data_women)"

@@ -1,0 +1,5 @@
+"0","survey_data$tenure <- 2021 - survey_data$STRTYR"
+"0","survey_data <- survey_data %>%"
+"0","  filter(tenure < 45) %>%"
+"0","  filter(!is.na(tenure))"
+"0",""

@@ -1,0 +1,142 @@
+---
+title: "Untitled"
+author: "Dong Dong"
+date: "2024-10-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(readr)
+```
+
+
+```{r}
+survey_data <- read_csv("survey2021_filtered.csv")
+```
+```{r}
+# Specify factor levels and recode categorical variables
+survey_data <- survey_data %>%
+  mutate(
+    # Recode Job_Match_Status with descriptive labels
+    Job_Match_Status = factor(ifelse(OCEDRLP %in% c(1, 2), "Match", "Mismatch"),
+                              levels = c("Match", "Mismatch")),
+    
+    # Recode Field_of_Study (NBAMEMG) with descriptive labels
+    Field_of_Study = factor(NBAMEMG, levels = 1:7,
+                            labels = c("Computer and Mathematical Sciences",
+                                       "Biological, Agricultural and Environmental Life Sciences",
+                                       "Physical and Related Sciences",
+                                       "Social and Related Sciences",
+                                       "Engineering",
+                                       "S&E-Related Fields",
+                                       "Non-S&E Fields")),
+    
+    # Recode Highest_Degree (DGRDG) with descriptive labels
+    Highest_Degree = factor(DGRDG, levels = 1:4,
+                            labels = c("Bachelor", "Master", "Doctorate", "Professional")),
+    
+    # Recode Race_Ethnicity (RACETHM) with descriptive labels
+    Race_Ethnicity = factor(RACETHM, levels = 1:7,
+                            labels = c("Asian, non-Hispanic",
+                                       "American Indian/Alaska Native, non-Hispanic",
+                                       "Black, non-Hispanic",
+                                       "Hispanic, any race",
+                                       "White, non-Hispanic",
+                                       "Native Hawaiian/Other Pacific Islander, non-Hispanic",
+                                       "Multiple Race, non-Hispanic")),
+    
+    # Recode Carnegie_Group based on BACARN values
+    Carnegie_Group = factor(case_when(
+      BACARN %in% c(11, 12) ~ "Research",
+      BACARN %in% c(13, 14) ~ "Doctorate Granting",
+      BACARN %in% c(21, 22) ~ "Comprehensive",
+      BACARN %in% c(31, 32) ~ "Liberal Arts",
+      BACARN %in% c(40, 51, 52, 53, 54, 56, 59, 60) ~ "Specialized",
+    ), levels = c("Research", "Doctorate Granting", "Comprehensive", "Liberal Arts", "Specialized"))
+  )
+```
+
+
+
+```{r}
+# Filter data to keep salary values between 5000 and 500,000
+survey_data<- survey_data %>%
+  filter(SALARY > 5000 & SALARY < 500000)
+
+```
+
+```{r}
+survey_data <- survey_data %>%
+  mutate(log_earning = log(SALARY))
+```
+
+```{r}
+survey_data$tenure <- 2021 - survey_data$STRTYR
+survey_data <- survey_data %>%
+  filter(tenure < 45) %>%
+  filter(!is.na(tenure))
+
+```
+
+```{r}
+data_men <- survey_data[survey_data$GENDER == 'M',]
+data_women <- survey_data[survey_data$GENDER == 'F',] 
+model_men <- lm(log_earning ~ Job_Match_Status * Field_of_Study + Highest_Degree + Race_Ethnicity + Job_Match_Status + AGE + tenure   + I(AGE^2) + I(tenure ^2) + Carnegie_Group, data = data_men)
+
+model_women <- lm(log_earning ~ Job_Match_Status * Field_of_Study + Highest_Degree + Race_Ethnicity + Job_Match_Status + AGE + tenure  + I(AGE^2) + I(tenure^2) + Carnegie_Group, data = data_women)
+```
+
+```{r}
+ summary(model_men)
+
+```
+
+```{r}
+library(stargazer)
+```
+
+```{r}
+stargazer(model_men, model_women, type = "text",
+          title = "Results of Linear Regression Analysis",
+          align = TRUE,
+          dep.var.labels.include = FALSE,
+          column.labels = c("Men", "Women"),
+          covariate.labels = c("Mismatch", "Biological Sciences", "Physical Sciences",
+                               "Social Sciences", "Engineering", "S&E-Related Fields",
+                               "Non-S&E Fields", "Master", "Doctorate",
+                               "Professional", "Asian", "Black", "Hispanic", "White",
+                               "American Indian/Alaska Native", "Multiple", "Age", "Tenure", "Age Squared", "Tenure Squared",
+                               "CDoctorate Granting", "Comprehensive", "Liberal Arts",
+                               "Specialized", "Mismatch * Biological Sciences",
+                               "Mismatch * Physical Sciences", "Mismatch * Social Sciences",
+                               "Mismatch * Engineering", "Mismatch * S&E-Related Fields",
+                               "Mismatch *  Non-S&E Fields"),
+          omit.stat = c("adj.rsq", "f", "ser"),
+          digits = 3,
+          star.cutoffs = c(0.05, 0.01, 0.001))
+```
+
+
+```{r}
+library(MASS)
+# Step 1: Check and convert 'JOBSATIS' to an ordered factor
+survey_data$JOBSATIS <- factor(survey_data$JOBSATIS, levels = c("4", "3", "2", "1"),
+                               labels = c("Very dissatisfied", "Somewhat dissatisfied", "Somewhat satisfied", "Very satisfied"),
+                               ordered = TRUE)
+
+
+
+# Fit the ordered logistic regression model
+model_jobsatis <- polr(JOBSATIS ~ Job_Match_Status * Field_of_Study + Highest_Degree + 
+                       Race_Ethnicity + AGE + tenure + I(AGE^2) + I(tenure^2) + Carnegie_Group, 
+                       data = survey_data, Hess = TRUE)
+#Summarize the model
+summary(model_jobsatis)
+
+```
