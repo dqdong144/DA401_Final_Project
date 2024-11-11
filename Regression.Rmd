@@ -288,8 +288,6 @@ stargazer(result_matrix_carnegie, type = "text", summary = FALSE, title = "Regre
 ```
 
 ```{r}
-
-
 # Define a function to run the process for each year
 run_ordered_logit_for_year <- function(data, year) {
   # Prepare the data
@@ -307,36 +305,19 @@ run_ordered_logit_for_year <- function(data, year) {
     filter(!is.na(Job_Satisfaction))
   
   # Fit the ordered logistic model
-  model <- tryCatch({
-    polr(Job_Satisfaction ~ Job_Match_Status + Highest_Degree + Race_Ethnicity + AGE + I(AGE^2) + tenure + I(tenure^2) + 
-           GENDER + US_Citizen + Field_of_Study + Carnegie_Group, data = data, Hess = TRUE)
-  }, error = function(e) {
-    cat("Model failed for year", year, ":", e$message, "\n")
-    return(NULL)
-  })
+  model <- polr(Job_Satisfaction ~ Job_Match_Status + Highest_Degree + Race_Ethnicity + AGE + I(AGE^2) + tenure + I(tenure^2) + 
+                GENDER + US_Citizen + Field_of_Study + Carnegie_Group, data = data, Hess = TRUE)
   
-  if (!is.null(model)) {
-    # Print model summary
-    cat("\nSummary for Year:", year, "\n")
-    coef_summary <- summary(model)
-    coef_summary$pval <- (pnorm(abs(coef_summary$coefficients[, "t value"]), lower.tail = FALSE) * 2)
-    print(coef_summary)
-    
-    # Calculate and print marginal effects
-    cat("\nMarginal Effects for Year:", year, "\n")
-    marginal_effects <- tryCatch({
-      ocME(model)
-    }, error = function(e) {
-      cat("Error calculating marginal effects:", e$message, "\n")
-      return(NULL)
-    })
-    
-    if (!is.null(marginal_effects)) {
-      print(marginal_effects)
-    } else {
-      cat("Marginal effects calculation returned NULL for year:", year, "\n")
-    }
-  }
+  # Print model summary
+  cat("\nSummary for Year:", year, "\n")
+  coef_summary <- summary(model)
+  coef_summary$pval <- (pnorm(abs(coef_summary$coefficients[, "t value"]), lower.tail = FALSE) * 2)
+  print(coef_summary)
+  
+  # Calculate and print marginal effects
+  cat("\nMarginal Effects for Year:", year, "\n")
+  marginal_effects <- ocME(model)
+  print(marginal_effects)
 }
 
 # Datasets for each year (assuming filter2017, filter2019, and filter2021 are already loaded in your workspace)
@@ -347,7 +328,6 @@ for (year in names(datasets)) {
   data <- datasets[[year]]
   run_ordered_logit_for_year(data, year)
 }
-
 ```
 
 
