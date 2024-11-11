@@ -12,20 +12,29 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 # Load necessary libraries
 library(dplyr)
-library(readr)
-```
+library(tidyr)
+library(readr) 
+library(survey) 
+library(stargazer)
+library(broom) 
+library(erer)
+library(MASS)
+``` 
 
 
 ```{r}
-survey_data <- read_csv("survey2021_filtered.csv")
+survey2021 <- read_csv("CSV_DATA/CleanData/filter2021.csv") 
+survey2019 <- read_csv("CSV_DATA/CleanData/filter2019.csv")  
+survey2017 <- read_csv("CSV_DATA/CleanData/filter2017.csv")
 ```
 ```{r}
 # Specify factor levels and recode categorical variables
-survey_data <- survey_data %>%
+prepare_survey_data <- function(df) {
+  df <- df %>%
   mutate(
     # Recode Job_Match_Status with descriptive labels
-    Job_Match_Status = factor(ifelse(OCEDRLP %in% c(1, 2), "Match", "Mismatch"),
-                              levels = c("Match", "Mismatch")),
+     Job_Match_Status = factor(OCEDRLP, levels = c(1, 2, 3), 
+                                labels = c("Closely related", "Somewhat related", "Not related")),
     
     # Recode Field_of_Study (NBAMEMG) with descriptive labels
     Field_of_Study = factor(NBAMEMG, levels = 1:7,
@@ -58,85 +67,288 @@ survey_data <- survey_data %>%
       BACARN %in% c(21, 22) ~ "Comprehensive",
       BACARN %in% c(31, 32) ~ "Liberal Arts",
       BACARN %in% c(40, 51, 52, 53, 54, 56, 59, 60) ~ "Specialized",
-    ), levels = c("Research", "Doctorate Granting", "Comprehensive", "Liberal Arts", "Specialized"))
-  )
-```
-
-
-
-```{r}
-# Filter data to keep salary values between 5000 and 500,000
-survey_data<- survey_data %>%
-  filter(SALARY > 5000 & SALARY < 500000)
-
-```
-
-```{r}
-survey_data <- survey_data %>%
+    ), levels = c("Research", "Doctorate Granting", "Comprehensive", "Liberal Arts", "Specialized")),
+      Married= ifelse(MARIND == "Y", 1, 0),
+      # Recode Gender as a binary variable (1 for Male, 0 for Female or other)
+      Men = ifelse(GENDER == "M", 1, 0),
+      
+      # Create binary variable for US citizenship
+      US_Citizen = ifelse(CTZUSIN == "Y", 1, 0),
+      
+  )%>%
+    filter(SALARY > 2000 & SALARY < 700000) %>%
   mutate(log_earning = log(SALARY))
-```
+  return(df)  } 
+# Apply the function to each year's dataset
+filter2017 <- prepare_survey_data(survey2017)
+filter2019 <- prepare_survey_data(survey2019)
+filter2021 <- prepare_survey_data(survey2021)
 
-```{r}
-survey_data$tenure <- 2021 - survey_data$STRTYR
-survey_data <- survey_data %>%
-  filter(tenure < 45) %>%
-  filter(!is.na(tenure))
-
-```
-
-```{r}
-data_men <- survey_data[survey_data$GENDER == 'M',]
-data_women <- survey_data[survey_data$GENDER == 'F',] 
-model_men <- lm(log_earning ~ Job_Match_Status * Field_of_Study + Highest_Degree + Race_Ethnicity + Job_Match_Status + AGE + tenure   + I(AGE^2) + I(tenure ^2) + Carnegie_Group, data = data_men)
-
-model_women <- lm(log_earning ~ Job_Match_Status * Field_of_Study + Highest_Degree + Race_Ethnicity + Job_Match_Status + AGE + tenure  + I(AGE^2) + I(tenure^2) + Carnegie_Group, data = data_women)
-```
-
-```{r}
- summary(model_men)
 
 ```
 
 ```{r}
-library(stargazer)
+#Tenure Calculation  
+filter2017 <- filter2017 %>% mutate(tenure = 2017 - STRTYR) %>%
+    filter(!is.na(tenure) & tenure < 45)  # Filtering invalid tenure data
+filter2019 <- filter2019 %>% mutate(tenure = 2019 - STRTYR) %>%
+    filter(!is.na(tenure) & tenure < 45) 
+filter2021 <- filter2021 %>% mutate(tenure = 2021 - STRTYR) %>%
+    filter(!is.na(tenure) & tenure < 45)
 ```
 
 ```{r}
-stargazer(model_men, model_women, type = "text",
-          title = "Results of Linear Regression Analysis",
-          align = TRUE,
-          dep.var.labels.include = FALSE,
-          column.labels = c("Men", "Women"),
-          covariate.labels = c("Mismatch", "Biological Sciences", "Physical Sciences",
-                               "Social Sciences", "Engineering", "S&E-Related Fields",
-                               "Non-S&E Fields", "Master", "Doctorate",
-                               "Professional", "Asian", "Black", "Hispanic", "White",
-                               "American Indian/Alaska Native", "Multiple", "Age", "Tenure", "Age Squared", "Tenure Squared",
-                               "CDoctorate Granting", "Comprehensive", "Liberal Arts",
-                               "Specialized", "Mismatch * Biological Sciences",
-                               "Mismatch * Physical Sciences", "Mismatch * Social Sciences",
-                               "Mismatch * Engineering", "Mismatch * S&E-Related Fields",
-                               "Mismatch *  Non-S&E Fields"),
-          omit.stat = c("adj.rsq", "f", "ser"),
-          digits = 3,
-          star.cutoffs = c(0.05, 0.01, 0.001))
+model <- lm(log_earning ~ Job_Match_Status +  Highest_Degree + Race_Ethnicity + AGE + I(AGE^2) + tenure + I(tenure^2) + GENDER + US_Citizen + Marital_Status, data =  filter2021)
+```
+
+```{r}
+# Define the model formula
+model_formula <- log_earning ~ Job_Match_Status + Highest_Degree + Race_Ethnicity + 
+                 AGE + I(AGE^2) + tenure + I(tenure^2) + Carnegie_Group + Men + US_Citizen + Married
+
+# Initialize list to store results
+all_models <- list()
+all_summaries <- list()
+
+# List of datasets and their respective years
+datasets <- list("2017" = filter2017, "2019" = filter2019, "2021" = filter2021)
+
+# Run the models for each year and each field
+for (year in names(datasets)) {
+  data <- datasets[[year]]
+  
+  for (field in levels(data$Field_of_Study)) {
+    # Subset the data for the current field of study
+    data_field <- data %>% filter(Field_of_Study == field)
+    
+    # Create survey design for this subset
+    design_field <- svydesign(id = ~1, weights = ~WTSURVY, data = data_field)
+    
+    # Run the weighted regression model
+    model <- svyglm(model_formula, design = design_field)
+    
+    # Store model and summary with year and field labels
+    model_key <- paste(year, field, sep = "_")
+    all_models[[model_key]] <- model
+    all_summaries[[model_key]] <- summary(model)
+    
+
+  }
+}
+
+```
+
+```{r}
+# Extract relevant coefficients and SEs for the table
+get_model_coefs <- function(model, coef_name) {
+  coef_summary <- summary(model)$coefficients
+  if (coef_name %in% rownames(coef_summary)) {
+    coef_value <- coef_summary[coef_name, "Estimate"]
+    se <- coef_summary[coef_name, "Std. Error"]
+    p_val <- coef_summary[coef_name, "Pr(>|t|)"]
+    
+    # Add stars for significance
+    if (p_val < 0.001) {
+      signif <- "***"
+    } else if (p_val < 0.01) {
+      signif <- "**"
+    } else if (p_val < 0.05) {
+      signif <- "*"
+    } else {
+      signif <- ""
+    }
+    
+    return(paste0(round(coef_value, 4), " (", round(se, 4), ")", signif))
+  } else {
+    return("NA")  # For models where the coefficient is not available
+  }
+}
+
+# Initialize result matrix
+result_matrix <- matrix(ncol = 3, nrow = 7*2, dimnames = list(NULL, c("2017", "2019", "2021")))
+row_names <- c()
+field_names <- levels(filter2021$Field_of_Study)  # Assuming consistent levels across years
+
+for (field in field_names) {
+  for (status in c("Job_Match_StatusSomewhat related", "Job_Match_StatusNot related")) {
+    row_names <- c(row_names, paste(field, status, sep = "_"))
+  }
+}
+
+rownames(result_matrix) <- row_names
+
+# Fill result matrix with coefficients for each year and each field of study
+for (year in c("2017", "2019", "2021")) {
+  for (field in field_names) {
+    model_key <- paste(year, field, sep = "_")
+    model <- all_models[[model_key]]
+    
+    # Populate the matrix with the coefficients of interest
+    result_matrix[paste(field, "Job_Match_StatusSomewhat related", sep = "_"), year] <- get_model_coefs(model, "Job_Match_StatusSomewhat related")
+    result_matrix[paste(field, "Job_Match_StatusNot related", sep = "_"), year] <- get_model_coefs(model, "Job_Match_StatusNot related")
+  }
+}
+
+# Display results with stargazer
+stargazer(result_matrix, type = "text", summary = FALSE, title = "Regression Results for Job Match Status by Field of Study and Year")
+```
+
+```{r}
+result_matrix
 ```
 
 
 ```{r}
-library(MASS)
-# Step 1: Check and convert 'JOBSATIS' to an ordered factor
-survey_data$JOBSATIS <- factor(survey_data$JOBSATIS, levels = c("4", "3", "2", "1"),
-                               labels = c("Very dissatisfied", "Somewhat dissatisfied", "Somewhat satisfied", "Very satisfied"),
-                               ordered = TRUE)
+# Define the model formula, replacing Carnegie_Group with Field_of_Study
+model_formula <- log_earning ~ Job_Match_Status + Highest_Degree + Race_Ethnicity +
+                 AGE + I(AGE^2) + tenure + I(tenure^2) + Field_of_Study + Men + US_Citizen + Married
 
+# Initialize list to store results for Carnegie Group classifications
+all_models_by_carnegie <- list()
+all_summaries_by_carnegie <- list()
 
+# List of datasets and their respective years
+datasets <- list("2017" = filter2017, "2019" = filter2019, "2021" = filter2021)
 
-# Fit the ordered logistic regression model
-model_jobsatis <- polr(JOBSATIS ~ Job_Match_Status * Field_of_Study + Highest_Degree + 
-                       Race_Ethnicity + AGE + tenure + I(AGE^2) + I(tenure^2) + Carnegie_Group, 
-                       data = survey_data, Hess = TRUE)
-#Summarize the model
-summary(model_jobsatis)
+# Run the models for each year and each Carnegie Group classification
+for (year in names(datasets)) {
+  data <- datasets[[year]]
+  
+  for (group in levels(data$Carnegie_Group)) {
+    # Subset the data for the current Carnegie Group classification
+    data_group <- data %>% filter(Carnegie_Group == group)
+    
+    # Create survey design for this subset
+    design_group <- svydesign(id = ~1, weights = ~WTSURVY, data = data_group)
+    
+    # Run the weighted regression model
+    model <- svyglm(model_formula, design = design_group)
+    
+    # Store model and summary with year and Carnegie Group labels
+    model_key <- paste(year, group, sep = "_")
+    all_models_by_carnegie[[model_key]] <- model
+    all_summaries_by_carnegie[[model_key]] <- summary(model)
+    
+  }
+}
+
+# Extract coefficients and standard errors for Job_Match_Status (for each model)
+get_model_coefs <- function(model, coef_name) {
+  coef_summary <- summary(model)$coefficients
+  if (coef_name %in% rownames(coef_summary)) {
+    coef_value <- coef_summary[coef_name, "Estimate"]
+    se <- coef_summary[coef_name, "Std. Error"]
+    p_val <- coef_summary[coef_name, "Pr(>|t|)"]
+    
+    # Add stars for significance
+    if (p_val < 0.001) {
+      signif <- "***"
+    } else if (p_val < 0.01) {
+      signif <- "**"
+    } else if (p_val < 0.05) {
+      signif <- "*"
+    } else {
+      signif <- ""
+    }
+    
+    return(paste0(round(coef_value, 4), " (", round(se, 4), ")", signif))
+  } else {
+    return("NA")
+  }
+}
+
+# Initialize result matrix for Carnegie Group classifications
+result_matrix_carnegie <- matrix(ncol = 3, nrow = 5*2, dimnames = list(NULL, c("2017", "2019", "2021")))
+row_names_carnegie <- c()
+carnegie_names <- levels(filter2021$Carnegie_Group)
+
+for (group in carnegie_names) {
+  for (status in c("Job_Match_StatusSomewhat related", "Job_Match_StatusNot related")) {
+    row_names_carnegie <- c(row_names_carnegie, paste(group, status, sep = "_"))
+  }
+}
+
+rownames(result_matrix_carnegie) <- row_names_carnegie
+
+# Fill result matrix with coefficients for each year and each Carnegie Group
+for (year in c("2017", "2019", "2021")) {
+  for (group in carnegie_names) {
+    model_key <- paste(year, group, sep = "_")
+    model <- all_models_by_carnegie[[model_key]]
+    
+    # Populate the matrix with the coefficients of interest
+    result_matrix_carnegie[paste(group, "Job_Match_StatusSomewhat related", sep = "_"), year] <- get_model_coefs(model, "Job_Match_StatusSomewhat related")
+    result_matrix_carnegie[paste(group, "Job_Match_StatusNot related", sep = "_"), year] <- get_model_coefs(model, "Job_Match_StatusNot related")
+  }
+}
+
+# Display results with stargazer
+stargazer(result_matrix_carnegie, type = "text", summary = FALSE, title = "Regression Results for Job Match Status by Carnegie Group and Year")
 
 ```
+
+```{r}
+
+
+# Define a function to run the process for each year
+run_ordered_logit_for_year <- function(data, year) {
+  # Prepare the data
+  data <- data %>%
+    mutate(
+      # Recode Job_Match_Status as a factor
+      Job_Match_Status = factor(OCEDRLP, levels = c(1, 2, 3),
+                                labels = c("Closely related", "Somewhat related", "Not related")),
+      
+      # Recode Job Satisfaction as an ordered factor
+      Job_Satisfaction = factor(JOBSATIS, levels = 1:4, ordered = TRUE,
+                                labels = c("Very satisfied", "Somewhat satisfied", 
+                                           "Somewhat dissatisfied", "Very dissatisfied"))
+    ) %>%
+    filter(!is.na(Job_Satisfaction))
+  
+  # Fit the ordered logistic model
+  model <- tryCatch({
+    polr(Job_Satisfaction ~ Job_Match_Status + Highest_Degree + Race_Ethnicity + AGE + I(AGE^2) + tenure + I(tenure^2) + 
+           GENDER + US_Citizen + Field_of_Study + Carnegie_Group, data = data, Hess = TRUE)
+  }, error = function(e) {
+    cat("Model failed for year", year, ":", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (!is.null(model)) {
+    # Print model summary
+    cat("\nSummary for Year:", year, "\n")
+    coef_summary <- summary(model)
+    coef_summary$pval <- (pnorm(abs(coef_summary$coefficients[, "t value"]), lower.tail = FALSE) * 2)
+    print(coef_summary)
+    
+    # Calculate and print marginal effects
+    cat("\nMarginal Effects for Year:", year, "\n")
+    marginal_effects <- tryCatch({
+      ocME(model)
+    }, error = function(e) {
+      cat("Error calculating marginal effects:", e$message, "\n")
+      return(NULL)
+    })
+    
+    if (!is.null(marginal_effects)) {
+      print(marginal_effects)
+    } else {
+      cat("Marginal effects calculation returned NULL for year:", year, "\n")
+    }
+  }
+}
+
+# Datasets for each year (assuming filter2017, filter2019, and filter2021 are already loaded in your workspace)
+datasets <- list("2017" = filter2017, "2019" = filter2019, "2021" = filter2021)
+
+# Run the function for each year
+for (year in names(datasets)) {
+  data <- datasets[[year]]
+  run_ordered_logit_for_year(data, year)
+}
+
+```
+
+
+
