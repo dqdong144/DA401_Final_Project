@@ -27,6 +27,7 @@ survey2021 <- read_csv("CSV_DATA/CleanData/filter2021.csv")
 survey2019 <- read_csv("CSV_DATA/CleanData/filter2019.csv")  
 survey2017 <- read_csv("CSV_DATA/CleanData/filter2017.csv")
 ```
+
 ```{r}
 # Specify factor levels and recode categorical variables
 prepare_survey_data <- function(df) {
@@ -98,10 +99,6 @@ filter2021 <- filter2021 %>% mutate(tenure = 2021 - STRTYR) %>%
 ```
 
 ```{r}
-model <- lm(log_earning ~ Job_Match_Status +  Highest_Degree + Race_Ethnicity + AGE + I(AGE^2) + tenure + I(tenure^2) + GENDER + US_Citizen + Marital_Status, data =  filter2021)
-```
-
-```{r}
 # Define the model formula
 model_formula <- log_earning ~ Job_Match_Status + Highest_Degree + Race_Ethnicity + 
                  AGE + I(AGE^2) + tenure + I(tenure^2) + Carnegie_Group + Men + US_Citizen + Married
@@ -112,26 +109,21 @@ all_summaries <- list()
 
 # List of datasets and their respective years
 datasets <- list("2017" = filter2017, "2019" = filter2019, "2021" = filter2021)
+# Initialize list to store R-squared values
+all_r_squared <- list()
 
-# Run the models for each year and each field
+# Run the models and store summaries and R-squared values
 for (year in names(datasets)) {
   data <- datasets[[year]]
   
   for (field in levels(data$Field_of_Study)) {
-    # Subset the data for the current field of study
     data_field <- data %>% filter(Field_of_Study == field)
-    
-    # Create survey design for this subset
     design_field <- svydesign(id = ~1, weights = ~WTSURVY, data = data_field)
-    
-    # Run the weighted regression model
     model <- svyglm(model_formula, design = design_field)
     
-    # Store model and summary with year and field labels
     model_key <- paste(year, field, sep = "_")
     all_models[[model_key]] <- model
     all_summaries[[model_key]] <- summary(model)
-    
 
   }
 }
@@ -320,7 +312,7 @@ run_ordered_logit_for_year <- function(data, year) {
   print(marginal_effects)
 }
 
-# Datasets for each year (assuming filter2017, filter2019, and filter2021 are already loaded in your workspace)
+
 datasets <- list("2017" = filter2017, "2019" = filter2019, "2021" = filter2021)
 
 # Run the function for each year
@@ -329,6 +321,8 @@ for (year in names(datasets)) {
   run_ordered_logit_for_year(data, year)
 }
 ```
+
+
 
 
 
